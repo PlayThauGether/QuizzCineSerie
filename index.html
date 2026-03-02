@@ -633,13 +633,17 @@
             from { opacity: 0; transform: scale(0.8); }
             to { opacity: 1; transform: scale(1); }
         }
-        .reveal-bottom-bar {
-            display: flex;
-            gap: 1rem;
+        .reveal-countdown {
+            color: #aaa;
+            font-size: 1rem;
             margin-top: 1.5rem;
-            align-items: center;
-            flex-wrap: wrap;
-            justify-content: center;
+            font-weight: 600;
+            animation: revealFadeIn 0.5s ease;
+        }
+        .reveal-countdown span {
+            color: #00f5ff;
+            font-size: 1.3rem;
+            font-weight: 800;
         }
         .reveal-winners {
             display: flex;
@@ -1184,12 +1188,6 @@
                     <div class="answer-text" id="reveal-answer-text"></div>
                 </div>
 
-                <div class="host-controls hidden" id="host-controls">
-                    <button class="btn" id="host-next-image-btn" onclick="hostNextImage()">📷 Image suivante</button>
-                    <button class="btn secondary" id="host-reveal-btn" onclick="hostRevealAnswer()">👁️ Révéler</button>
-                    <button class="btn" id="host-next-q-btn" onclick="hostNextQuestion()">➡️ Question suivante</button>
-                </div>
-
                 <div class="host-answers-panel hidden" id="host-answers-panel">
                     <h4>Réponses des joueurs</h4>
                     <div id="host-answers-list"></div>
@@ -1215,9 +1213,7 @@
         <div class="reveal-movie-name" id="reveal-movie-name"></div>
         <img class="reveal-poster" id="reveal-poster" src="" alt="Affiche">
         <div class="reveal-winners" id="reveal-winners"></div>
-        <div class="reveal-bottom-bar">
-            <button class="btn" id="reveal-next-btn" onclick="hostNextQuestion()">➡️ Question suivante</button>
-        </div>
+        <div class="reveal-countdown" id="reveal-countdown">Question suivante dans <span id="reveal-timer">5</span>s</div>
     </div>
 
     <!-- ============ LEADERBOARD SCREEN ============ -->
@@ -1321,6 +1317,7 @@ const gameState = {
     createEmoji: '😀',
     lastCorrectPlayers: [],
     wrongFeedbackTimeout: null,
+    revealInterval: null,
     listeners: []
 };
 
@@ -2248,9 +2245,11 @@ function loadQuestion(qIndex) {
     gameState.answered = false;
     gameState.answeredAtImage = 0;
     gameState.lastCorrectPlayers = [];
+    gameState.currentImage = 1; // Force reset to image 1
 
-    // Close reveal overlay
+    // Close reveal overlay and clear reveal timer
     document.getElementById('reveal-overlay').classList.remove('show');
+    clearInterval(gameState.revealInterval);
 
     // Reset correct answers panel
     document.getElementById('correct-answers-list').innerHTML = '<div class="no-correct">Personne pour le moment...</div>';
@@ -2268,20 +2267,14 @@ function loadQuestion(qIndex) {
 
     const isHostViewing = gameState.isHost && gameState.hostMode;
     document.getElementById('answer-zone').classList.toggle('hidden', isHostViewing);
-    document.getElementById('host-controls').classList.toggle('hidden', !gameState.isHost);
     document.getElementById('host-answers-panel').classList.toggle('hidden', !isHostViewing);
 
     // Sidebars: only show for host in host mode
-    const showSidebars = !gameState.hostMode || gameState.isHost;
+    const showSidebars = gameState.hostMode && gameState.isHost;
     document.getElementById('scoreboard-side').classList.toggle('hidden', !showSidebars);
     document.getElementById('correct-side').classList.toggle('hidden', !showSidebars);
 
-    if (gameState.isHost) {
-        document.getElementById('host-next-image-btn').classList.remove('hidden');
-        document.getElementById('host-reveal-btn').classList.remove('hidden');
-        document.getElementById('host-next-q-btn').classList.add('hidden');
-    }
-
+    // Force image display from scratch
     updateImageDisplay();
     updateDifficultyBadges();
     updatePointsAvailable();
@@ -2414,10 +2407,6 @@ async function hostNextImage() {
     try {
         await db.ref('filmQuizRooms/' + gameState.room.code + '/currentImage').set(nextLevel);
         gameState.currentImage = nextLevel;
-
-        if (nextLevel >= 3) {
-            document.getElementById('host-next-image-btn').classList.add('hidden');
-        }
     } catch (e) {}
 }
 
@@ -2432,6 +2421,7 @@ async function hostRevealAnswer() {
 
 function showAnswerReveal() {
     clearInterval(gameState.timerInterval);
+    clearInterval(gameState.revealInterval);
     const q = gameState.quizData[gameState.currentQ];
     if (!q) return;
 
@@ -2466,9 +2456,6 @@ function showAnswerReveal() {
         winnersDiv.innerHTML = '<div class="reveal-no-winner">😢 Personne n\'a trouvé !</div>';
     }
 
-    // Show/hide next button based on host
-    document.getElementById('reveal-next-btn').style.display = gameState.isHost ? 'inline-block' : 'none';
-    
     overlay.classList.add('show');
 
     // Hide old answer reveal
@@ -2477,12 +2464,6 @@ function showAnswerReveal() {
     document.getElementById('answer-input').disabled = true;
     document.getElementById('submit-answer-btn').disabled = true;
 
-    if (gameState.isHost) {
-        document.getElementById('host-next-image-btn').classList.add('hidden');
-        document.getElementById('host-reveal-btn').classList.add('hidden');
-        document.getElementById('host-next-q-btn').classList.add('hidden');
-    }
-
     if (!gameState.answered && !(gameState.isHost && gameState.hostMode)) {
         const fb = document.getElementById('answer-feedback');
         fb.className = 'answer-feedback wrong';
@@ -2490,12 +2471,36 @@ function showAnswerReveal() {
         fb.style.display = 'block';
         playSound('wrong');
     }
+
+    // Auto-advance countdown (5s) — only host triggers the Firebase update
+    let revealCountdown = 5;
+    document.getElementById('reveal-timer').textContent = revealCountdown;
+    
+    // Show/hide countdown text
+    const countdownEl = document.getElementById('reveal-countdown');
+    const isLastQuestion = gameState.currentQ >= gameState.quizData.length - 1;
+    countdownEl.innerHTML = isLastQuestion 
+        ? `Résultats dans <span id="reveal-timer">${revealCountdown}</span>s`
+        : `Question suivante dans <span id="reveal-timer">${revealCountdown}</span>s`;
+
+    gameState.revealInterval = setInterval(() => {
+        revealCountdown--;
+        document.getElementById('reveal-timer').textContent = Math.max(0, revealCountdown);
+        
+        if (revealCountdown <= 0) {
+            clearInterval(gameState.revealInterval);
+            if (gameState.isHost) {
+                hostNextQuestion();
+            }
+        }
+    }, 1000);
 }
 
 async function hostNextQuestion() {
     if (!gameState.isHost) return;
     
-    // Close reveal overlay
+    // Close reveal overlay and stop countdown
+    clearInterval(gameState.revealInterval);
     document.getElementById('reveal-overlay').classList.remove('show');
     
     const nextQ = gameState.currentQ + 1;
@@ -2707,6 +2712,7 @@ function updateCorrectAnswersSide(answers) {
 // ============================================================
 function showLeaderboard() {
     clearInterval(gameState.timerInterval);
+    clearInterval(gameState.revealInterval);
     document.getElementById('reveal-overlay').classList.remove('show');
     showScreen('leaderboard-screen');
 
@@ -2895,6 +2901,7 @@ function backToMenu() {
         if (!confirm('⚠️ Tu es en pleine partie ! Tu veux vraiment quitter ?')) return;
     }
     clearInterval(gameState.timerInterval);
+    clearInterval(gameState.revealInterval);
     document.getElementById('reveal-overlay').classList.remove('show');
     gameState.listeners.forEach(l => l.off());
     gameState.listeners = [];
