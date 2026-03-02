@@ -1033,7 +1033,7 @@
     <!-- ============ MENU SCREEN ============ -->
     <div class="screen" id="menu-screen">
         <div class="logo">
-            <div class="title">Quiz PTG</div>
+            <div class="title">QUIZ</div>
             <div class="title" style="font-size: 2rem; margin-top: -0.5rem;">FILM & SÉRIE</div>
             <div class="subtitle">🎬 3 Images, 1 Film — Trouve le plus vite !</div>
         </div>
@@ -1048,8 +1048,18 @@
     <!-- ============ CREATE SCREEN ============ -->
     <div class="screen hidden" id="create-screen">
         <div class="logo">
-            <div class="title" style="font-size: 2rem;">Création de Partie</div>
+            <div class="title" style="font-size: 2rem;">Créer</div>
             <div class="subtitle">Configure ta partie</div>
+        </div>
+
+        <div class="section">
+            <h3>😀 Ton pseudo</h3>
+            <input class="input" id="create-name" placeholder="Ton pseudo..." maxlength="15" autocomplete="off">
+        </div>
+
+        <div class="section">
+            <h3>😎 Ton emoji</h3>
+            <div class="emoji-grid" id="create-emoji-grid"></div>
         </div>
 
         <div class="section">
@@ -1072,11 +1082,11 @@
         <div class="section">
             <label class="checkbox-label">
                 <input type="checkbox" id="host-mode-check">
-                <span>🎛️ Mode Hôte (Affichage des Questions Seulement, ne joue pas)</span>
+                <span>🎛️ Mode Hôte (ne joue pas)</span>
             </label>
             <label class="checkbox-label">
                 <input type="checkbox" id="team-mode-check">
-                <span>👥 Mode Équipe (2 Équipes, Aléatoire)</span>
+                <span>👥 Mode Équipe</span>
             </label>
         </div>
 
@@ -1308,6 +1318,7 @@ const gameState = {
     teamMode: false,
     selectedQuiz: '',
     selectedEmoji: '😀',
+    createEmoji: '😀',
     lastCorrectPlayers: [],
     listeners: []
 };
@@ -1597,6 +1608,20 @@ function initUI() {
         emojiGrid.appendChild(btn);
     });
 
+    // Create screen emoji grid
+    const createEmojiGrid = document.getElementById('create-emoji-grid');
+    EMOJIS.forEach((em, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'emoji-btn' + (i === 0 ? ' selected' : '');
+        btn.textContent = em;
+        btn.onclick = () => {
+            createEmojiGrid.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            gameState.createEmoji = em;
+        };
+        createEmojiGrid.appendChild(btn);
+    });
+
     const numGrid = document.getElementById('num-grid');
     [5, 10, 15, 20, 25].forEach(n => {
         const btn = document.createElement('button');
@@ -1629,6 +1654,14 @@ function initUI() {
 
     document.getElementById('join-code').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') joinRoom();
+    });
+
+    // Toggle name/emoji visibility based on host mode
+    document.getElementById('host-mode-check').addEventListener('change', (e) => {
+        const nameSection = document.getElementById('create-name').closest('.section');
+        const emojiSection = document.getElementById('create-emoji-grid').closest('.section');
+        nameSection.classList.toggle('hidden', e.target.checked);
+        emojiSection.classList.toggle('hidden', e.target.checked);
     });
 
     loadQuizList();
@@ -1901,8 +1934,11 @@ async function createRoom() {
     const shuffledQuiz = shuffle(quizData).slice(0, numQ);
 
     const code = genCode();
-    const hostName = hostMode ? '🎛️ Hôte' : 'Joueur 1';
-    const hostEmoji = '🎬';
+    const createName = document.getElementById('create-name').value.trim();
+    const hostName = hostMode ? '🎛️ Hôte' : (createName || 'Joueur 1');
+    const hostEmoji = hostMode ? '🎬' : gameState.createEmoji;
+
+    if (!hostMode && !createName) { showToast('❌ Entre un pseudo !'); hideLoading(); return; }
 
     const room = {
         code,
