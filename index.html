@@ -1320,6 +1320,7 @@ const gameState = {
     selectedEmoji: '😀',
     createEmoji: '😀',
     lastCorrectPlayers: [],
+    wrongFeedbackTimeout: null,
     listeners: []
 };
 
@@ -2081,7 +2082,6 @@ function setupRoomListeners(code) {
             gameState.currentImage = img;
             if (gameState.room.started) {
                 updateImageDisplay();
-                resetTimerForImage();
             }
         }
     });
@@ -2216,6 +2216,14 @@ async function startGame() {
 
         showScreen('game-screen');
         requestWakeLock();
+        
+        // Preload first question images before loading
+        if (shuffledQuiz[0]) {
+            shuffledQuiz[0].images.forEach(url => {
+                if (url) { const img = new Image(); img.src = url; }
+            });
+        }
+        
         loadQuestion(0);
     } catch (e) {
         showToast('❌ Erreur: ' + e.message);
@@ -2259,6 +2267,11 @@ function loadQuestion(qIndex) {
     document.getElementById('host-controls').classList.toggle('hidden', !gameState.isHost);
     document.getElementById('host-answers-panel').classList.toggle('hidden', !isHostViewing);
 
+    // Sidebars: only show for host in host mode
+    const showSidebars = !gameState.hostMode || gameState.isHost;
+    document.getElementById('scoreboard-side').classList.toggle('hidden', !showSidebars);
+    document.getElementById('correct-side').classList.toggle('hidden', !showSidebars);
+
     if (gameState.isHost) {
         document.getElementById('host-next-image-btn').classList.remove('hidden');
         document.getElementById('host-reveal-btn').classList.remove('hidden');
@@ -2268,7 +2281,6 @@ function loadQuestion(qIndex) {
     updateImageDisplay();
     updateDifficultyBadges();
     updatePointsAvailable();
-    startTimer();
 }
 
 function updateImageDisplay() {
@@ -2280,13 +2292,62 @@ function updateImageDisplay() {
     const container = document.getElementById('image-container');
 
     if (imgUrl) {
-        container.innerHTML = `<img src="${imgUrl}" class="image-appear" alt="Image indice" onerror="this.parentElement.innerHTML='<div class=\\'placeholder-img\\'>🖼️ Image non disponible</div>'">`;
+        // Show loading state
+        container.innerHTML = '<div class="placeholder-img" style="font-size:2rem;">⏳</div>';
+        
+        const img = new Image();
+        img.onload = () => {
+            container.innerHTML = '';
+            img.className = 'image-appear';
+            img.alt = 'Image indice';
+            container.appendChild(img);
+            // Start timer ONLY when image is visible
+            startTimer();
+        };
+        img.onerror = () => {
+            container.innerHTML = '<div class="placeholder-img">🖼️ Image non disponible</div>';
+            startTimer();
+        };
+        img.src = imgUrl;
     } else {
         container.innerHTML = '<div class="placeholder-img">🎬</div>';
+        startTimer();
     }
+
+    // Preload next images (next level + next question)
+    preloadUpcomingImages();
 
     updateDifficultyBadges();
     updatePointsAvailable();
+}
+
+function preloadUpcomingImages() {
+    const q = gameState.quizData[gameState.currentQ];
+    if (!q) return;
+
+    // Preload remaining images of current question
+    for (let i = gameState.currentImage; i <= 3; i++) {
+        if (q.images[i]) {
+            const img = new Image();
+            img.src = q.images[i];
+        }
+    }
+    // Preload poster
+    if (q.images[3]) {
+        const img = new Image();
+        img.src = q.images[3];
+    }
+
+    // Preload all images of next question
+    const nextQ = gameState.quizData[gameState.currentQ + 1];
+    if (nextQ) {
+        nextQ.images.forEach(url => {
+            if (url) {
+                const img = new Image();
+                img.src = url;
+            }
+        });
+    }
 }
 
 function updateDifficultyBadges() {
@@ -2469,46 +2530,61 @@ async function submitAnswer() {
     const imageLevel = gameState.currentImage;
     const points = correct ? (4 - imageLevel) : 0;
 
-    gameState.answered = true;
-    gameState.answeredAtImage = imageLevel;
-
-    if (correct && gameState.room.players[gameState.playerIndex]) {
-        gameState.room.players[gameState.playerIndex].score += points;
-    }
-
     const fb = document.getElementById('answer-feedback');
+
     if (correct) {
+        // Lock on correct answer
+        gameState.answered = true;
+        gameState.answeredAtImage = imageLevel;
+
+        if (gameState.room.players[gameState.playerIndex]) {
+            gameState.room.players[gameState.playerIndex].score += points;
+        }
+
         fb.className = 'answer-feedback correct';
         fb.textContent = `✅ Correct ! +${points} point${points > 1 ? 's' : ''} ${imageLevel === 1 ? '🔥' : imageLevel === 2 ? '👍' : '👌'}`;
+        fb.style.display = 'block';
         playSound('correct');
+
+        document.getElementById('answer-input').disabled = true;
+        document.getElementById('submit-answer-btn').disabled = true;
+        document.getElementById('my-score').textContent = gameState.room.players[gameState.playerIndex]?.score || 0;
+
+        // Push correct answer to Firebase
+        const code = gameState.room.code;
+        const myName = safeName(gameState.room.players[gameState.playerIndex].name);
+        try {
+            await db.ref('filmQuizRooms/' + code + '/answers/' + myName).set({
+                correct: true,
+                imageLevel,
+                points,
+                questionIndex: gameState.currentQ,
+                answer: input,
+                timestamp: Date.now()
+            });
+            await db.ref('filmQuizRooms/' + code + '/players/' + gameState.playerIndex + '/score')
+                .set(gameState.room.players[gameState.playerIndex].score);
+        } catch (e) {
+            console.error('Submit error:', e);
+        }
     } else {
+        // Wrong answer — let them retry
         fb.className = 'answer-feedback wrong';
-        fb.textContent = '❌ Mauvaise réponse...';
+        fb.textContent = '❌ Mauvaise réponse, réessaie !';
+        fb.style.display = 'block';
         playSound('wrong');
-    }
-    fb.style.display = 'block';
 
-    document.getElementById('answer-input').disabled = true;
-    document.getElementById('submit-answer-btn').disabled = true;
+        // Clear input for retry
+        document.getElementById('answer-input').value = '';
+        document.getElementById('answer-input').focus();
 
-    document.getElementById('my-score').textContent = gameState.room.players[gameState.playerIndex]?.score || 0;
-
-    const code = gameState.room.code;
-    const myName = safeName(gameState.room.players[gameState.playerIndex].name);
-    try {
-        await db.ref('filmQuizRooms/' + code + '/answers/' + myName).set({
-            correct,
-            imageLevel,
-            points,
-            questionIndex: gameState.currentQ,
-            answer: input,
-            timestamp: Date.now()
-        });
-
-        await db.ref('filmQuizRooms/' + code + '/players/' + gameState.playerIndex + '/score')
-            .set(gameState.room.players[gameState.playerIndex].score);
-    } catch (e) {
-        console.error('Submit error:', e);
+        // Fade out feedback after 1.5s
+        clearTimeout(gameState.wrongFeedbackTimeout);
+        gameState.wrongFeedbackTimeout = setTimeout(() => {
+            if (!gameState.answered) {
+                fb.style.display = 'none';
+            }
+        }, 1500);
     }
 
     updateSideScores();
@@ -2811,6 +2887,9 @@ async function newGameFromLeaderboard() {
 //  BACK TO MENU
 // ============================================================
 function backToMenu() {
+    if (gameState.room && gameState.room.started) {
+        if (!confirm('⚠️ Tu es en pleine partie ! Tu veux vraiment quitter ?')) return;
+    }
     clearInterval(gameState.timerInterval);
     document.getElementById('reveal-overlay').classList.remove('show');
     gameState.listeners.forEach(l => l.off());
@@ -2829,6 +2908,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     initUI();
     await tryReconnect();
 });
+
+// Protection against accidental page close/refresh
+window.addEventListener('beforeunload', (e) => {
+    if (gameState.room) {
+        e.preventDefault();
+        e.returnValue = 'Tu es en pleine partie ! Tu veux vraiment quitter ?';
+        return e.returnValue;
+    }
+});
+
+// Keep session alive on visibility change (tab switch on mobile)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && gameState.room) {
+        // Re-request wake lock when coming back
+        requestWakeLock();
+    }
+});
+
+// Prevent back button from leaving during game
+window.addEventListener('popstate', (e) => {
+    if (gameState.room) {
+        history.pushState(null, '', '');
+        showToast('⚠️ Utilise le bouton Menu pour quitter');
+    }
+});
+history.pushState(null, '', '');
 </script>
 </body>
 </html>
