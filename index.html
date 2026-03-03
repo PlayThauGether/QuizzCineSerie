@@ -478,7 +478,8 @@
             margin-top: 140px;
             padding: 0;
             position: relative;
-            align-items: center;
+            display: flex;
+            align-items: stretch;
             justify-content: center;
         }
         #game-screen.host-view .game-main {
@@ -489,14 +490,13 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            justify-content: center;
         }
         #game-screen.host-view .image-zone {
             max-width: none;
             width: 100%;
             flex: 1;
             margin: 0;
-            padding: 0 240px;
+            padding: 0;
             display: flex;
             align-items: stretch;
             justify-content: center;
@@ -510,9 +510,6 @@
             width: 100%;
             height: 100%;
             background: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
         #game-screen.host-view .image-container img {
             width: 100%;
@@ -1271,9 +1268,6 @@
                 font-size: 0.8rem;
                 padding: 0.6rem;
             }
-            #game-screen.host-view .image-zone {
-                padding: 0 200px;
-            }
             #game-screen.host-view .difficulty-bar {
                 left: 190px;
                 right: 190px;
@@ -1345,7 +1339,7 @@
     <!-- ============ MENU SCREEN ============ -->
     <div class="screen" id="menu-screen">
         <div class="logo">
-            <div class="title">QUIZ Play Thau'Gether</div>
+            <div class="title">QUIZ</div>
             <div class="title" style="font-size: 2rem; margin-top: -0.5rem;">FILM & SÉRIE</div>
             <div class="subtitle">🎬 3 Images, 1 Film — Trouve le plus vite !</div>
         </div>
@@ -1360,7 +1354,7 @@
     <!-- ============ CREATE SCREEN ============ -->
     <div class="screen hidden" id="create-screen">
         <div class="logo">
-            <div class="title" style="font-size: 2rem;">Création de partie</div>
+            <div class="title" style="font-size: 2rem;">Créer</div>
             <div class="subtitle">Configure ta partie</div>
         </div>
 
@@ -1394,11 +1388,11 @@
         <div class="section">
             <label class="checkbox-label">
                 <input type="checkbox" id="host-mode-check">
-                <span>🎛️ Mode Hôte (Affichage seulement, ne joue pas)</span>
+                <span>🎛️ Mode Hôte (ne joue pas)</span>
             </label>
             <label class="checkbox-label">
                 <input type="checkbox" id="team-mode-check">
-                <span>👥 Mode Équipe (2 Équipes, Aléatoire)</span>
+                <span>👥 Mode Équipe</span>
             </label>
         </div>
 
