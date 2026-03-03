@@ -706,6 +706,18 @@
             text-transform: uppercase;
             letter-spacing: 0.08em;
             text-shadow: 0 0 30px rgba(255, 190, 11, 0.5), 0 4px 15px rgba(0, 0, 0, 0.8);
+            margin-bottom: 0.3rem;
+            animation: revealSlideDown 0.6s ease;
+            max-width: 90%;
+        }
+        .reveal-movie-vo {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #00f5ff;
+            text-align: center;
+            font-style: italic;
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
             margin-bottom: 1.2rem;
             animation: revealSlideDown 0.6s ease;
             max-width: 90%;
@@ -775,10 +787,12 @@
 
         @media (max-width: 768px) {
             .reveal-movie-name { font-size: 2.2rem; }
+            .reveal-movie-vo { font-size: 1.1rem; }
             .reveal-poster { max-width: 85vw; max-height: 45vh; }
         }
         @media (max-width: 480px) {
             .reveal-movie-name { font-size: 1.6rem; }
+            .reveal-movie-vo { font-size: 0.9rem; }
             .reveal-poster { max-width: 90vw; max-height: 40vh; }
         }
 
@@ -1289,6 +1303,7 @@
     <!-- ============ REVEAL OVERLAY ============ -->
     <div class="reveal-overlay" id="reveal-overlay">
         <div class="reveal-movie-name" id="reveal-movie-name"></div>
+        <div class="reveal-movie-vo" id="reveal-movie-vo"></div>
         <img class="reveal-poster" id="reveal-poster" src="" alt="Affiche">
         <div class="reveal-winners" id="reveal-winners"></div>
         <div class="reveal-countdown" id="reveal-countdown">Question suivante dans <span id="reveal-timer">5</span>s</div>
@@ -1492,6 +1507,13 @@ function getDisplayAnswer(answerField) {
     return parts[0].trim();
 }
 
+// Get VO name (second answer, for reveal screen)
+function getVOAnswer(answerField) {
+    if (!answerField) return '';
+    const parts = answerField.split(' / ');
+    return parts.length > 1 ? parts[1].trim() : '';
+}
+
 function showScreen(id) {
     document.querySelectorAll('.screen, .level-intro-screen').forEach(s => s.classList.add('hidden'));
     const el = document.getElementById(id);
@@ -1539,6 +1561,77 @@ function playSound(type) {
         osc.start();
         osc.stop(ctx.currentTime + 0.2);
     } catch (e) {}
+}
+
+// ============================================================
+//  TICK CHRONO SOUND
+// ============================================================
+let tickAudioCtx = null;
+let tickInterval = null;
+
+function playTick(urgent) {
+    try {
+        if (!tickAudioCtx) tickAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = tickAudioCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (urgent) {
+            osc.frequency.value = 1200;
+            osc.type = 'square';
+            gain.gain.value = 0.12;
+            osc.start();
+            osc.stop(ctx.currentTime + 0.06);
+        } else {
+            osc.frequency.value = 800;
+            osc.type = 'sine';
+            gain.gain.value = 0.08;
+            osc.start();
+            osc.stop(ctx.currentTime + 0.05);
+        }
+    } catch (e) {}
+}
+
+function startTickSound(totalSeconds, remainingSeconds) {
+    stopTickSound();
+    
+    // Only tick for the last 60% of the timer, accelerating
+    const tickThreshold = Math.ceil(totalSeconds * 0.6);
+    if (remainingSeconds > tickThreshold) return;
+
+    scheduleNextTick(remainingSeconds, totalSeconds);
+}
+
+function scheduleNextTick(remaining, total) {
+    if (remaining <= 0) { stopTickSound(); return; }
+
+    // Calculate interval: slower at start, faster as time runs out
+    let interval;
+    if (remaining <= 3) {
+        interval = 150; // Very fast
+    } else if (remaining <= 5) {
+        interval = 300; // Fast
+    } else if (remaining <= 8) {
+        interval = 500; // Medium
+    } else {
+        interval = 800; // Slow
+    }
+
+    const urgent = remaining <= 5;
+    playTick(urgent);
+
+    tickInterval = setTimeout(() => {
+        // Don't schedule next — the timer function will call startTickSound each second
+    }, interval);
+}
+
+function stopTickSound() {
+    clearTimeout(tickInterval);
+    tickInterval = null;
 }
 
 // ============================================================
@@ -1612,9 +1705,10 @@ async function tryReconnect() {
             const phase = room.gamePhase || 'playing';
             if (phase === 'intro') {
                 showRulesIntro(session.code);
+            } else if (phase === 'finished') {
+                showLeaderboard();
             } else {
                 // Game in progress — load with anti-cheat
-                // revealRef listener will handle showing reveal if needed
                 loadQuestionWithCheck(gameState.currentQ);
             }
         } else {
@@ -2057,6 +2151,12 @@ function setupRoomListeners(code) {
             document.getElementById('rules-overlay').classList.remove('show');
             // Load question with anti-cheat check
             loadQuestionWithCheck(gameState.currentQ);
+        } else if (phase === 'finished') {
+            // Game over — show leaderboard for everyone
+            clearInterval(gameState.revealInterval);
+            clearInterval(gameState.timerInterval);
+            stopTickSound();
+            showLeaderboard();
         }
     });
     gameState.listeners.push(phaseRef);
@@ -2232,14 +2332,15 @@ function showRulesIntro(code) {
     const overlay = document.getElementById('rules-overlay');
     overlay.classList.add('show');
 
-    // Preload ALL images of the first 2 questions during intro
-    for (let i = 0; i < Math.min(2, gameState.quizData.length); i++) {
-        const q = gameState.quizData[i];
-        if (q && q.images) {
-            q.images.forEach(url => {
-                if (url) { const img = new Image(); img.src = url; }
-            });
-        }
+    // Preload ALL images of ALL questions during the 15s intro
+    if (gameState.quizData && gameState.quizData.length > 0) {
+        gameState.quizData.forEach(q => {
+            if (q && q.images) {
+                q.images.forEach(url => {
+                    if (url) { const img = new Image(); img.src = url; }
+                });
+            }
+        });
     }
 
     let countdown = 15;
@@ -2440,6 +2541,7 @@ function updatePointsAvailable() {
 
 function startTimer() {
     clearInterval(gameState.timerInterval);
+    stopTickSound();
     gameState.timerValue = gameState.timerPerImage;
     document.getElementById('game-timer').textContent = gameState.timerValue;
 
@@ -2447,8 +2549,14 @@ function startTimer() {
         gameState.timerValue--;
         document.getElementById('game-timer').textContent = Math.max(0, gameState.timerValue);
 
+        // Tick sound — only on host device when hostMode is active
+        if (gameState.timerValue > 0 && (!gameState.hostMode || gameState.isHost)) {
+            startTickSound(gameState.timerPerImage, gameState.timerValue);
+        }
+
         if (gameState.timerValue <= 0) {
             clearInterval(gameState.timerInterval);
+            stopTickSound();
             if (gameState.isHost) {
                 autoAdvance();
             }
@@ -2488,6 +2596,7 @@ async function hostNextImage() {
 async function hostRevealAnswer() {
     if (!gameState.isHost) return;
     clearInterval(gameState.timerInterval);
+    stopTickSound();
 
     try {
         await db.ref('filmQuizRooms/' + gameState.room.code + '/revealAnswer').set(true);
@@ -2497,12 +2606,23 @@ async function hostRevealAnswer() {
 function showAnswerReveal() {
     clearInterval(gameState.timerInterval);
     clearInterval(gameState.revealInterval);
+    stopTickSound();
     const q = gameState.quizData[gameState.currentQ];
     if (!q) return;
 
     // Show cinematic reveal overlay
     const overlay = document.getElementById('reveal-overlay');
     document.getElementById('reveal-movie-name').textContent = getDisplayAnswer(q.answer);
+    
+    // Show VO name if available
+    const voName = getVOAnswer(q.answer);
+    const voEl = document.getElementById('reveal-movie-vo');
+    if (voName) {
+        voEl.textContent = voName;
+        voEl.style.display = 'block';
+    } else {
+        voEl.style.display = 'none';
+    }
     
     const posterUrl = q.images[3] || q.images[2] || '';
     const posterImg = document.getElementById('reveal-poster');
@@ -2581,6 +2701,13 @@ async function hostNextQuestion() {
     const nextQ = gameState.currentQ + 1;
 
     if (nextQ >= gameState.quizData.length) {
+        // Signal game over to all players via Firebase
+        try {
+            await db.ref('filmQuizRooms/' + gameState.room.code).update({
+                gamePhase: 'finished',
+                revealAnswer: false
+            });
+        } catch (e) {}
         showLeaderboard();
         return;
     }
@@ -2629,6 +2756,7 @@ async function submitAnswer() {
         fb.textContent = `✅ Correct ! +${points} point${points > 1 ? 's' : ''} ${imageLevel === 1 ? '🔥' : imageLevel === 2 ? '👍' : '👌'}`;
         fb.style.display = 'block';
         playSound('correct');
+        stopTickSound();
 
         document.getElementById('answer-input').disabled = true;
         document.getElementById('submit-answer-btn').disabled = true;
@@ -2761,6 +2889,7 @@ function showLeaderboard() {
     clearInterval(gameState.timerInterval);
     clearInterval(gameState.revealInterval);
     clearInterval(gameState.introInterval);
+    stopTickSound();
     document.getElementById('reveal-overlay').classList.remove('show');
     document.getElementById('rules-overlay').classList.remove('show');
     showScreen('leaderboard-screen');
@@ -2952,6 +3081,7 @@ function backToMenu() {
     clearInterval(gameState.timerInterval);
     clearInterval(gameState.revealInterval);
     clearInterval(gameState.introInterval);
+    stopTickSound();
     document.getElementById('reveal-overlay').classList.remove('show');
     document.getElementById('rules-overlay').classList.remove('show');
     gameState.listeners.forEach(l => l.off());
