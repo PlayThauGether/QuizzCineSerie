@@ -1322,7 +1322,7 @@
             .emergency-btn { font-size: 0.7rem; padding: 0.3rem 0.6rem; top: calc(8px + env(safe-area-inset-top, 0px)); right: 8px; }
             .answer-input-row { flex-direction: column; }
             .emoji-grid { grid-template-columns: repeat(6, 44px); }
-            #game-screen { padding-bottom: 320px !important; }
+            #game-screen { padding-bottom: 80px !important; }
         }
 
         @media (max-height: 700px) and (max-width: 480px) {
@@ -3602,12 +3602,12 @@ window.addEventListener('beforeunload', (e) => {
     }
 });
 
-// Fix mobile keyboard: scroll input into view when keyboard opens
+// Fix mobile keyboard: gentle scroll so input stays visible
 document.addEventListener('focusin', function(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         setTimeout(() => {
-            e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300);
+            e.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 350);
     }
 });
 
