@@ -1434,7 +1434,7 @@
         <div class="menu-buttons">
             <button class="btn large" onclick="requireLoginThen(goToCreateScreen)">🎬 Créer une partie</button>
             <button class="btn large secondary" onclick="showScreen('join-screen')">🎮 Rejoindre</button>
-            <button class="btn outline" onclick="requireLoginThen(function(){ showScreen('manage-screen'); })">📁 Gérer les quiz</button>
+            <button class="btn outline" id="manage-quiz-btn" onclick="requireLoginThen(function(){ showScreen('manage-screen'); })" style="display: none;">📁 Gérer les quiz</button>
             <button id="admin-menu-btn" class="btn" onclick="goToAdmin()" style="display: none;">👥 Gérer les comptes</button>
             <button id="account-menu-btn" class="btn" onclick="goToAccount()" style="display: none;">⚙️ Mon Compte</button>
             <button id="logout-btn" class="btn danger" onclick="doLogout()" style="display: none; font-size: 0.85rem; padding: 0.6rem 1.2rem;">🔓 Déconnexion (<span id="logged-user"></span>)</button>
@@ -1519,7 +1519,7 @@
     <!-- ============ CREATE SCREEN ============ -->
     <div class="screen hidden" id="create-screen">
         <div class="logo">
-            <div class="title" style="font-size: 2rem;">Créer</div>
+            <div class="title" style="font-size: 2rem;">Création de partie</div>
             <div class="subtitle">Configure ta partie</div>
         </div>
 
@@ -1882,11 +1882,13 @@ function updateMenuButtons() {
         document.getElementById('logout-btn').style.display = '';
         document.getElementById('login-menu-btn').style.display = 'none';
         document.getElementById('admin-menu-btn').style.display = currentUser.isAdmin ? '' : 'none';
+        document.getElementById('manage-quiz-btn').style.display = currentUser.isAdmin ? '' : 'none';
         document.getElementById('account-menu-btn').style.display = '';
     } else {
         document.getElementById('logout-btn').style.display = 'none';
         document.getElementById('login-menu-btn').style.display = '';
         document.getElementById('admin-menu-btn').style.display = 'none';
+        document.getElementById('manage-quiz-btn').style.display = 'none';
         document.getElementById('account-menu-btn').style.display = 'none';
     }
 }
@@ -1902,12 +1904,16 @@ function requireLoginThen(action) {
         return;
     }
     pendingAction = action;
-    db.ref('appUsers').once('value', function(snap) {
+    db.ref('appUsers').once('value').then(function(snap) {
         if (!snap.val() || Object.keys(snap.val()).length === 0) {
             showScreen('setup-screen');
         } else {
             showScreen('login-screen');
         }
+    }).catch(function(err) {
+        console.error('Firebase appUsers error:', err);
+        // Si erreur Firebase (règles, réseau...), proposer le setup quand même
+        showScreen('setup-screen');
     });
 }
 
@@ -1923,12 +1929,18 @@ async function doSetup() {
     var hash = await hashPassword(pass);
     var safeKey = username.replace(/[.#$[\]\/]/g, '_');
 
-    await db.ref('appUsers/' + safeKey).set({
-        username: username,
-        passwordHash: hash,
-        isAdmin: true,
-        createdAt: Date.now()
-    });
+    try {
+        await db.ref('appUsers/' + safeKey).set({
+            username: username,
+            passwordHash: hash,
+            isAdmin: true,
+            createdAt: Date.now()
+        });
+    } catch(e) {
+        console.error('Setup Firebase error:', e);
+        showToast('❌ Erreur Firebase ! Vérifie les règles de ta base de données (appUsers doit être en read/write true)');
+        return;
+    }
 
     currentUser = { username: safeKey, isAdmin: true };
     localStorage.setItem('quizFilmAuth', JSON.stringify({ username: safeKey }));
@@ -2666,6 +2678,7 @@ async function refreshQuizManager() {
 }
 
 async function importQuizFromJSON() {
+    if (!currentUser || !currentUser.isAdmin) { showToast('❌ Réservé aux administrateurs'); return; }
     const name = document.getElementById('import-quiz-name').value.trim();
     const jsonText = document.getElementById('import-quiz-json').value.trim();
     const emoji = document.getElementById('import-quiz-emoji-btn').textContent.trim() || '🎬';
@@ -2723,6 +2736,7 @@ function togglePlaylistEmojiPicker() {
 }
 
 async function deleteQuiz(key) {
+    if (!currentUser || !currentUser.isAdmin) { showToast('❌ Réservé aux administrateurs'); return; }
     if (!confirm('Supprimer ce quiz ?')) return;
     try {
         await db.ref('filmQuizPacks/' + key).remove();
@@ -4010,9 +4024,9 @@ function backToMenu() {
 //  INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    await initAuth();
+    try { await initAuth(); } catch(e) { console.error('initAuth error:', e); }
     initUI();
-    await tryReconnect();
+    try { await tryReconnect(); } catch(e) { console.error('tryReconnect error:', e); }
 });
 
 // Protection against accidental page close/refresh
