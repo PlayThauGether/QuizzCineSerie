@@ -907,19 +907,6 @@
             max-width: 600px;
             animation: revealFadeIn 0.5s ease;
         }
-        .rules-quiz-name {
-            font-family: 'Bungee Shade', cursive;
-            font-size: 2rem;
-            background: linear-gradient(45deg, #ff006e, #ffbe0b, #00f5ff);
-            background-size: 200% 200%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradient 3s ease infinite;
-            margin-bottom: 1.5rem;
-            text-align: center;
-            line-height: 1.2;
-        }
         .rules-title {
             font-family: 'Montserrat', sans-serif;
             font-size: 4rem;
@@ -990,7 +977,6 @@
         }
 
         @media (max-width: 480px) {
-            .rules-quiz-name { font-size: 1.4rem; }
             .rules-title { font-size: 2.8rem; }
             .rules-title-sub { font-size: 2.5rem; }
             .rule-item { font-size: 1rem; }
@@ -1442,7 +1428,7 @@
     <div class="screen" id="menu-screen">
         <div class="logo">
             <div class="title">QUIZ Play Thau'Gether</div>
-            <div class="title" style="font-size: 2rem; margin-top: -0.5rem;">Film / Série / Jeux Vidéo</div>
+            <div class="subtitle" style="font-size: 1.4rem; margin-top: 0.3rem;">Film / Série / Jeux Vidéo</div>
             <div class="subtitle">🎬 3 Images, 1 Oeuvre — Trouve le plus vite !</div>
         </div>
         <div class="menu-buttons">
@@ -1711,14 +1697,13 @@
     <!-- ============ RULES INTRO OVERLAY ============ -->
     <div class="rules-overlay" id="rules-overlay">
         <div class="rules-content">
-            <div class="rules-quiz-name" id="rules-quiz-name"></div>
             <div class="rules-title">3 IMAGES</div>
-            <div class="rules-title-sub">1 FILM</div>
+            <div class="rules-title-sub" id="rules-title-sub">1 FILM</div>
             <div class="rules-divider"></div>
             <div class="rules-text">
                 3 images vont apparaître l'une après l'autre.<br>
                 La première est <strong style="color:#ff4444;">difficile</strong>, la deuxième de <strong style="color:#ffbe0b;">difficulté moyenne</strong> et la troisième plus <strong style="color:#00ff64;">facile</strong>.<br><br>
-                Trouvez le film qui correspond en inscrivant le titre.<br>
+                Trouvez l'oeuvre qui correspond en inscrivant le titre.<br>
                 <span style="color:#00f5ff;">Version française et version anglaise acceptées !</span><br>
                 <span style="color:#aaa;">Les fautes d'orthographe sont tolérées 😉</span>
             </div>
@@ -1860,8 +1845,6 @@ const firebaseConfig = {
     appId: "1:66771526720:web:6cf4c0754f7da1e9666ba5"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
 const db = firebase.database();
 
 // ============================================================
@@ -2652,7 +2635,7 @@ async function refreshQuizManager() {
         div.className = 'quiz-item';
         div.innerHTML = `
             <span class="quiz-item-name">🎬 ${name}</span>
-            <span class="quiz-item-count">${DEMO_QUIZZES[name].length} films</span>
+            <span class="quiz-item-count">${DEMO_QUIZZES[name].length} questions</span>
             <span style="color: #aaa; font-size: 0.75rem;">Intégré</span>
         `;
         container.appendChild(div);
@@ -2669,7 +2652,7 @@ async function refreshQuizManager() {
                 div.className = 'quiz-item';
                 div.innerHTML = `
                     <span class="quiz-item-name">${pack.emoji || '📁'} ${pack.name || key}</span>
-                    <span class="quiz-item-count">${count} films</span>
+                    <span class="quiz-item-count">${count} questions</span>
                     <button class="btn small danger" onclick="deleteQuiz('${key}')">🗑️</button>
                 `;
                 container.appendChild(div);
@@ -2695,7 +2678,7 @@ async function importQuizFromJSON() {
         if (!Array.isArray(data)) throw new Error('Le JSON doit être un tableau');
 
         const valid = data.filter(m => m.answer && m.images && m.images.length >= 3);
-        if (valid.length < 3) throw new Error('Minimum 3 films complets');
+        if (valid.length < 3) throw new Error('Minimum 3 entrées complètes');
 
         showLoading('Import...');
         const key = name.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -3190,9 +3173,10 @@ function showRulesIntro(code) {
     const overlay = document.getElementById('rules-overlay');
     overlay.classList.add('show');
 
-    // Display quiz name
-    const quizNameEl = document.getElementById('rules-quiz-name');
-    quizNameEl.textContent = gameState.room.quizName || '';
+    // Set dynamic title based on quiz name: "3 IMAGES / 1 [quizName]"
+    const titleSub = document.getElementById('rules-title-sub');
+    const qName = gameState.room.quizName || 'Oeuvre';
+    titleSub.textContent = '1 ' + qName.toUpperCase();
 
     // Preload ALL images of ALL questions during the 15s intro
     if (gameState.quizData && gameState.quizData.length > 0) {
@@ -3924,7 +3908,7 @@ function generateFunStats(players) {
     const maxPossible = gameState.quizData.length * 3;
     stats.push({ icon: '🎯', title: 'Score max possible', value: maxPossible + ' pts' });
 
-    stats.push({ icon: '🎬', title: 'Films joués', value: gameState.quizData.length });
+    stats.push({ icon: '🎬', title: 'Questions jouées', value: gameState.quizData.length });
 
     stats.forEach(s => {
         const div = document.createElement('div');
