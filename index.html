@@ -1413,9 +1413,10 @@
             background: rgba(26, 31, 58, 0.9);
         }
         .buzzer-btn {
-            width: 250px; height: 250px;
+            width: 75vmin; height: 75vmin;
+            max-width: 400px; max-height: 400px;
             border-radius: 50%;
-            border: 6px solid #ff006e;
+            border: 8px solid #ff006e;
             background: radial-gradient(circle at 40% 35%, #ff4488, #ff006e 50%, #cc0055);
             color: white;
             cursor: pointer;
@@ -1424,7 +1425,7 @@
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
-            box-shadow: 0 0 60px rgba(255, 0, 110, 0.5), 0 10px 40px rgba(0,0,0,0.5), inset 0 -8px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 0 80px rgba(255, 0, 110, 0.5), 0 15px 50px rgba(0,0,0,0.5), inset 0 -10px 25px rgba(0,0,0,0.3);
             transition: all 0.1s;
             -webkit-tap-highlight-color: transparent;
             user-select: none;
@@ -1440,8 +1441,8 @@
             box-shadow: none;
             cursor: not-allowed;
         }
-        .buzzer-icon { font-size: 4rem; line-height: 1; }
-        .buzzer-text { font-family: 'Montserrat', sans-serif; font-size: 2rem; font-weight: 800; letter-spacing: 0.1em; }
+        .buzzer-icon { font-size: 5rem; line-height: 1; }
+        .buzzer-text { font-family: 'Montserrat', sans-serif; font-size: 2.5rem; font-weight: 800; letter-spacing: 0.1em; }
         .buzzer-feedback {
             margin-top: 2rem;
             font-size: 1.3rem;
@@ -1480,11 +1481,35 @@
         }
         .buzz-player-time { color: #00f5ff; font-size: 1.3rem; font-weight: 700; }
         .buzz-host-btns { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; justify-content: center; }
+        .buzz-answer-zone { width: 100%; max-width: 400px; margin-top: 1.5rem; }
+        .buzz-answer-input {
+            width: 100%;
+            max-width: 100%;
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid #ffbe0b;
+            border-radius: 15px;
+            color: white;
+            font-size: 1.2rem;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+            text-align: center;
+        }
+        .buzz-answer-input::placeholder { color: rgba(255,255,255,0.4); }
+        .buzz-answer-input:focus { outline: none; border-color: #00f5ff; }
+        .buzz-answer-feedback {
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 800;
+            min-height: 1.5rem;
+            margin-top: 0.5rem;
+        }
 
         @media (max-width: 480px) {
-            .buzzer-btn { width: 200px; height: 200px; }
-            .buzzer-icon { font-size: 3rem; }
-            .buzzer-text { font-size: 1.5rem; }
+            .buzzer-btn { max-width: 300px; max-height: 300px; }
+            .buzzer-icon { font-size: 4rem; }
+            .buzzer-text { font-size: 2rem; }
             .buzz-player-name { font-size: 2rem; }
             .buzz-player-emoji { font-size: 4rem; }
         }
@@ -1812,10 +1837,12 @@
                 <div class="buzz-player-emoji" id="buzz-player-emoji">🔔</div>
                 <div class="buzz-player-name" id="buzz-player-name">Joueur</div>
                 <div class="buzz-player-time" id="buzz-player-time">0.00s</div>
-                <div class="buzz-host-btns">
-                    <button class="btn large" style="background: linear-gradient(135deg, #00ff64, #00c864); color: #000;" onclick="buzzCorrect()">✅ Correct</button>
-                    <button class="btn large danger" onclick="buzzWrong()">❌ Mauvaise réponse</button>
+                <div class="buzz-answer-zone">
+                    <input class="input buzz-answer-input" id="buzz-answer-input" placeholder="Écris sa réponse ici..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                    <button class="btn large" style="width: 100%;" onclick="buzzValidateAnswer()">🔔 Valider</button>
                 </div>
+                <div class="buzz-answer-feedback" id="buzz-answer-feedback"></div>
+                <button class="btn outline" style="margin-top: 0.5rem; font-size: 0.85rem;" onclick="buzzSkip()">⏭️ Passer (mauvaise réponse)</button>
             </div>
         </div>
 
@@ -2725,6 +2752,10 @@ function initUI() {
 
     document.getElementById('answer-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') submitAnswer();
+    });
+
+    document.getElementById('buzz-answer-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') buzzValidateAnswer();
     });
 
     document.getElementById('join-code').addEventListener('keydown', (e) => {
@@ -3734,6 +3765,9 @@ async function playerBuzz() {
     if (btn.disabled) return;
     btn.disabled = true;
 
+    // Haptic feedback
+    try { if (navigator.vibrate) navigator.vibrate([50, 30, 100]); } catch(e) {}
+
     var code = gameState.room.code;
     var player = gameState.room.players[gameState.playerIndex];
     if (!player) return;
@@ -3780,7 +3814,13 @@ function setupBuzzerListeners(code) {
         document.getElementById('buzz-player-name').textContent = fastest.name || sorted[0][0];
         var elapsed = gameState.questionStartTime ? ((Date.now() - gameState.questionStartTime) / 1000).toFixed(2) : '?';
         document.getElementById('buzz-player-time').textContent = 'Buzz en ' + elapsed + 's';
+
+        // Clear answer input and focus it
+        document.getElementById('buzz-answer-input').value = '';
+        document.getElementById('buzz-answer-feedback').textContent = '';
+
         document.getElementById('buzz-overlay').classList.remove('hidden');
+        setTimeout(function() { document.getElementById('buzz-answer-input').focus(); }, 200);
 
         gameState._buzzWinner = { key: sorted[0][0], name: fastest.name, emoji: fastest.emoji };
 
@@ -3813,18 +3853,34 @@ function setupBuzzerPlayerListeners(code) {
             if (state.winnerName === myName) {
                 fb.textContent = '🔔 C\'est toi ! Réponds à voix haute !';
                 fb.style.color = '#ffbe0b';
+                try { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]); } catch(e) {}
             } else {
                 fb.textContent = '⏸️ ' + (state.winnerEmoji || '') + ' ' + (state.winnerName || '') + ' a buzzé !';
                 fb.style.color = '#ff006e';
             }
         } else if (state.resumed) {
-            // Game resumed after wrong answer
-            var locked = state.locked || [];
+            // Game resumed after wrong answer — 5s cooldown for the wrong player
             var myName2 = safeName(gameState.room.players[gameState.playerIndex]?.name || '');
-            if (locked.indexOf(myName2) !== -1) {
+            var isCooldown = state.cooldownPlayer === myName2 && state.cooldownUntil && Date.now() < state.cooldownUntil;
+
+            if (isCooldown) {
                 btn.disabled = true;
-                fb.textContent = '🔒 Éliminé pour cette question';
-                fb.style.color = '#666';
+                var remaining = Math.ceil((state.cooldownUntil - Date.now()) / 1000);
+                fb.textContent = '⏳ Attends ' + remaining + 's...';
+                fb.style.color = '#ff006e';
+                // Countdown then re-enable
+                var cooldownInterval = setInterval(function() {
+                    var left = Math.ceil((state.cooldownUntil - Date.now()) / 1000);
+                    if (left <= 0) {
+                        clearInterval(cooldownInterval);
+                        btn.disabled = false;
+                        fb.textContent = '🔔 C\'est reparti !';
+                        fb.style.color = '#00f5ff';
+                        setTimeout(function() { if (!btn.disabled) fb.textContent = ''; }, 1500);
+                    } else {
+                        fb.textContent = '⏳ Attends ' + left + 's...';
+                    }
+                }, 500);
             } else {
                 btn.disabled = false;
                 fb.textContent = '❌ Mauvaise réponse ! Retente ta chance !';
@@ -3838,59 +3894,90 @@ function setupBuzzerPlayerListeners(code) {
     gameState.listeners.push(stateRef);
 }
 
-async function buzzCorrect() {
+async function buzzValidateAnswer() {
     if (!gameState.isHost) return;
     var code = gameState.room.code;
     var winner = gameState._buzzWinner;
     if (!winner) return;
 
-    // Give points based on current image
-    var points = 4 - gameState.currentImage;
-    var players = gameState.room.players || [];
-    var pIdx = players.findIndex(function(p) { return safeName(p.name) === winner.key; });
-    if (pIdx !== -1) {
-        players[pIdx].score = (players[pIdx].score || 0) + points;
-        await db.ref('filmQuizRooms/' + code + '/players/' + pIdx + '/score').set(players[pIdx].score);
+    var input = document.getElementById('buzz-answer-input').value.trim();
+    if (!input) { showToast('Écris la réponse du joueur !'); return; }
+
+    var q = gameState.quizData[gameState.currentQ];
+    if (!q) return;
+
+    var fb = document.getElementById('buzz-answer-feedback');
+    var correct = isAnswerSimilarMulti(input, q.answer);
+
+    if (correct) {
+        // Give points
+        var points = 4 - gameState.currentImage;
+        var players = gameState.room.players || [];
+        var pIdx = players.findIndex(function(p) { return safeName(p.name) === winner.key; });
+        if (pIdx !== -1) {
+            players[pIdx].score = (players[pIdx].score || 0) + points;
+            await db.ref('filmQuizRooms/' + code + '/players/' + pIdx + '/score').set(players[pIdx].score);
+        }
+
+        // Record in answers for fun stats
+        await db.ref('filmQuizRooms/' + code + '/answers/' + winner.key).set({
+            correct: true,
+            imageLevel: gameState.currentImage,
+            points: points,
+            questionIndex: gameState.currentQ,
+            timestamp: Date.now()
+        });
+
+        // Store for lastCorrectPlayers
+        gameState.lastCorrectPlayers = [{
+            name: winner.name, emoji: winner.emoji,
+            points: points, imageLevel: gameState.currentImage,
+            timestamp: Date.now()
+        }];
+
+        // Clean up and reveal
+        document.getElementById('buzz-overlay').classList.add('hidden');
+        document.getElementById('buzz-answer-input').value = '';
+        fb.textContent = '';
+        await db.ref('filmQuizRooms/' + code + '/buzz').remove();
+        await db.ref('filmQuizRooms/' + code + '/buzzState').remove();
+        gameState._buzzWinner = null;
+
+        hostRevealAnswer();
+    } else {
+        // Wrong answer — show feedback, then resume with cooldown
+        fb.textContent = '❌ Mauvaise réponse !';
+        fb.style.color = '#ff006e';
+        playSound('wrong');
+
+        setTimeout(function() {
+            buzzResumeAfterWrong();
+        }, 1200);
     }
-
-    // Record in answers for fun stats
-    await db.ref('filmQuizRooms/' + code + '/answers/' + winner.key).set({
-        correct: true,
-        imageLevel: gameState.currentImage,
-        points: points,
-        questionIndex: gameState.currentQ,
-        timestamp: Date.now()
-    });
-
-    // Store for lastCorrectPlayers
-    gameState.lastCorrectPlayers = [{
-        name: winner.name, emoji: winner.emoji,
-        points: points, imageLevel: gameState.currentImage,
-        timestamp: Date.now()
-    }];
-
-    // Clean up and reveal
-    document.getElementById('buzz-overlay').classList.add('hidden');
-    await db.ref('filmQuizRooms/' + code + '/buzz').remove();
-    await db.ref('filmQuizRooms/' + code + '/buzzState').remove();
-    gameState._buzzWinner = null;
-
-    // Trigger reveal
-    hostRevealAnswer();
 }
 
-async function buzzWrong() {
+function buzzSkip() {
+    // Host presses skip without typing — same as wrong
+    var fb = document.getElementById('buzz-answer-feedback');
+    fb.textContent = '❌ Mauvaise réponse !';
+    fb.style.color = '#ff006e';
+    setTimeout(function() {
+        buzzResumeAfterWrong();
+    }, 800);
+}
+
+async function buzzResumeAfterWrong() {
     if (!gameState.isHost) return;
     var code = gameState.room.code;
     var winner = gameState._buzzWinner;
-    if (!winner) return;
 
-    // Lock this player out for this question
-    if (!gameState.buzzerLocked) gameState.buzzerLocked = [];
-    gameState.buzzerLocked.push(winner.key);
-
-    // Hide overlay, resume
+    // Hide overlay, clear input
     document.getElementById('buzz-overlay').classList.add('hidden');
+    document.getElementById('buzz-answer-input').value = '';
+    document.getElementById('buzz-answer-feedback').textContent = '';
+
+    // Set 5s cooldown for this player (not permanent lock)
+    var cooldownPlayer = winner ? winner.key : null;
     gameState._buzzWinner = null;
 
     // Clear buzzes and notify players to resume
@@ -3898,10 +3985,11 @@ async function buzzWrong() {
     await db.ref('filmQuizRooms/' + code + '/buzzState').set({
         paused: false,
         resumed: true,
-        locked: gameState.buzzerLocked
+        cooldownPlayer: cooldownPlayer,
+        cooldownUntil: Date.now() + 5000
     });
 
-    // Resume timer from where it paused (don't reset)
+    // Resume timer from where it paused
     var remaining = gameState.timerValue;
     if (remaining > 0) {
         document.getElementById('game-timer').textContent = remaining;
