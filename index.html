@@ -1207,8 +1207,8 @@
 
         .fun-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 0.8rem;
+            grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+            gap: 0.5rem;
             width: 100%;
             max-width: 95%;
             margin: 1rem auto;
@@ -1216,13 +1216,15 @@
         .fun-stat {
             background: #1a1f3a;
             border: 2px solid #8338ec;
-            border-radius: 15px;
-            padding: 1rem;
+            border-radius: 12px;
+            padding: 0.6rem 0.5rem;
             text-align: center;
+            overflow: hidden;
         }
-        .fun-stat .stat-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
-        .fun-stat .stat-title { color: #00f5ff; font-size: 0.8rem; font-weight: 600; }
-        .fun-stat .stat-value { color: #ffbe0b; font-size: 1rem; font-weight: 800; margin-top: 0.3rem; }
+        .fun-stat-wide { grid-column: 1 / -1; }
+        .fun-stat .stat-icon { font-size: 1.3rem; margin-bottom: 0.15rem; }
+        .fun-stat .stat-title { color: #00f5ff; font-size: 0.7rem; font-weight: 600; line-height: 1.2; }
+        .fun-stat .stat-value { color: #ffbe0b; font-size: 0.8rem; font-weight: 800; margin-top: 0.2rem; line-height: 1.3; word-break: break-word; }
 
         .quiz-manager-box {
             background: #1a1f3a;
@@ -1519,7 +1521,7 @@
     <!-- ============ CREATE SCREEN ============ -->
     <div class="screen hidden" id="create-screen">
         <div class="logo">
-            <div class="title" style="font-size: 2rem;">Création de partie</div>
+            <div class="title" style="font-size: 2rem;">Créer</div>
             <div class="subtitle">Configure ta partie</div>
         </div>
 
@@ -2132,6 +2134,8 @@ const gameState = {
     createEmoji: '😀',
     lastCorrectPlayers: [],
     wrongFeedbackTimeout: null,
+    roundHistory: [],
+    questionStartTime: 0,
     revealInterval: null,
     introInterval: null,
     listeners: []
@@ -3279,6 +3283,10 @@ function loadQuestion(qIndex, alreadyAnswered) {
         return;
     }
 
+    // Track timing and reset history on first question
+    gameState.questionStartTime = Date.now();
+    if (qIndex === 0) gameState.roundHistory = [];
+
     const q = gameState.quizData[qIndex];
     gameState.answered = alreadyAnswered || false;
     gameState.answeredAtImage = 0;
@@ -3563,6 +3571,19 @@ function showAnswerReveal() {
     if (hintZone) hintZone.style.visibility = 'hidden';
     const q = gameState.quizData[gameState.currentQ];
     if (!q) return;
+
+    // Accumulate round stats for fun stats at end
+    if (!gameState.roundHistory) gameState.roundHistory = [];
+    const alreadyLogged = gameState.roundHistory.some(r => r.qIndex === gameState.currentQ);
+    if (!alreadyLogged) {
+        gameState.roundHistory.push({
+            qIndex: gameState.currentQ,
+            title: getDisplayAnswer(q.answer),
+            correct: [...(gameState.lastCorrectPlayers || [])],
+            totalPlayers: (gameState.room.players || []).filter(p => !(p.isHost && gameState.hostMode)).length,
+            startTime: gameState.questionStartTime || Date.now()
+        });
+    }
 
     // Show cinematic reveal overlay
     const overlay = document.getElementById('reveal-overlay');
@@ -3902,36 +3923,155 @@ function generateFunStats(players) {
     container.innerHTML = '';
     if (players.length === 0) return;
 
+    const history = gameState.roundHistory || [];
     const stats = [];
 
-    if (players.length > 0) {
-        stats.push({ icon: '👑', title: 'MVP', value: players[0].emoji + ' ' + players[0].name });
-    }
+    // Build per-player aggregates from round history
+    const ps = {}; // playerStats
+    players.forEach(p => {
+        ps[p.name] = { emoji: p.emoji, img1: 0, img2: 0, img3: 0, totalTime: 0, correctCount: 0 };
+    });
+    history.forEach(round => {
+        (round.correct || []).forEach(cp => {
+            if (!ps[cp.name]) return;
+            const s = ps[cp.name];
+            if (cp.imageLevel === 1) s.img1++;
+            if (cp.imageLevel === 2) s.img2++;
+            if (cp.imageLevel === 3) s.img3++;
+            s.correctCount++;
+            if (cp.timestamp && round.startTime) {
+                s.totalTime += (cp.timestamp - round.startTime);
+            }
+        });
+    });
 
+    // === PLAYER STATS ===
+
+    // 1. MVP
+    stats.push({ icon: '👑', title: 'MVP', value: players[0].emoji + ' ' + players[0].name });
+
+    // 2. Doit revoir ses classiques
     if (players.length > 1) {
-        const last = players[players.length - 1];
+        var last = players[players.length - 1];
         stats.push({ icon: '🐢', title: 'Doit revoir ses classiques', value: last.emoji + ' ' + last.name });
     }
 
-    const totalPts = players.reduce((s, p) => s + p.score, 0);
-    stats.push({ icon: '📊', title: 'Points totaux', value: totalPts + ' pts' });
+    // 3. Éclair — most answers on image 1
+    var eclairArr = Object.entries(ps).filter(function(e) { return e[1].img1 > 0; })
+        .sort(function(a, b) { return b[1].img1 - a[1].img1; });
+    if (eclairArr.length > 0) {
+        stats.push({ icon: '⚡', title: 'Éclair', value: eclairArr[0][1].emoji + ' ' + eclairArr[0][0] + ' (' + eclairArr[0][1].img1 + '× 🔴)' });
+    }
 
-    const avg = (totalPts / players.length).toFixed(1);
-    stats.push({ icon: '📈', title: 'Moyenne', value: avg + ' pts' });
+    // 4. Patience est mère de vertu — most answers on image 3
+    var patienceArr = Object.entries(ps).filter(function(e) { return e[1].img3 > 0; })
+        .sort(function(a, b) { return b[1].img3 - a[1].img3; });
+    if (patienceArr.length > 0) {
+        stats.push({ icon: '🐌', title: 'Patience est mère de vertu', value: patienceArr[0][1].emoji + ' ' + patienceArr[0][0] + ' (' + patienceArr[0][1].img3 + '× 🟢)' });
+    }
 
-    const maxPossible = gameState.quizData.length * 3;
-    stats.push({ icon: '🎯', title: 'Score max possible', value: maxPossible + ' pts' });
+    // 5. Fantôme — fewest correct answers
+    var fantomeArr = Object.entries(ps).sort(function(a, b) { return a[1].correctCount - b[1].correctCount; });
+    if (fantomeArr.length > 0) {
+        var f = fantomeArr[0];
+        stats.push({ icon: '👻', title: 'Fantôme', value: f[1].emoji + ' ' + f[0] + ' (' + f[1].correctCount + ' bonne' + (f[1].correctCount > 1 ? 's' : '') + ')' });
+    }
 
-    stats.push({ icon: '🎬', title: 'Questions jouées', value: gameState.quizData.length });
+    // 6. Chanceux — most answers in extremis (image 3)
+    var chanceuxArr = Object.entries(ps).filter(function(e) { return e[1].img3 > 0; })
+        .sort(function(a, b) {
+            var ratioA = a[1].correctCount > 0 ? a[1].img3 / a[1].correctCount : 0;
+            var ratioB = b[1].correctCount > 0 ? b[1].img3 / b[1].correctCount : 0;
+            return ratioB - ratioA;
+        });
+    if (chanceuxArr.length > 0 && chanceuxArr[0][1].img3 > 0) {
+        var ch = chanceuxArr[0];
+        stats.push({ icon: '🎰', title: 'Chanceux', value: ch[1].emoji + ' ' + ch[0] + ' (' + ch[1].img3 + '/' + ch[1].correctCount + ' in extremis)' });
+    }
 
-    stats.forEach(s => {
-        const div = document.createElement('div');
-        div.className = 'fun-stat';
-        div.innerHTML = `
-            <div class="stat-icon">${s.icon}</div>
-            <div class="stat-title">${s.title}</div>
-            <div class="stat-value">${s.value}</div>
-        `;
+    // 7. Chrono-Maître — lowest avg response time
+    var chronoArr = Object.entries(ps).filter(function(e) { return e[1].correctCount > 0 && e[1].totalTime > 0; })
+        .sort(function(a, b) { return (a[1].totalTime / a[1].correctCount) - (b[1].totalTime / b[1].correctCount); });
+    if (chronoArr.length > 0) {
+        var cr = chronoArr[0];
+        var avgSec = (cr[1].totalTime / cr[1].correctCount / 1000).toFixed(1);
+        stats.push({ icon: '⏱️', title: 'Chrono-Maître', value: cr[1].emoji + ' ' + cr[0] + ' (moy. ' + avgSec + 's)' });
+    }
+
+    // 8. Pépite — seul à trouver sur image 1 quand personne d'autre n'a trouvé
+    var pepite = null;
+    history.forEach(function(round) {
+        var img1Only = (round.correct || []).filter(function(cp) { return cp.imageLevel === 1; });
+        if (img1Only.length === 1 && round.correct.length === 1) {
+            pepite = img1Only[0];
+        }
+    });
+    if (pepite) {
+        stats.push({ icon: '💎', title: 'Pépite', value: pepite.emoji + ' ' + pepite.name });
+    }
+
+    // === QUESTION STATS ===
+
+    // 9. Le Mur — question la moins trouvée
+    if (history.length > 0) {
+        var wallSorted = history.slice().sort(function(a, b) { return a.correct.length - b.correct.length; });
+        var wall = wallSorted[0];
+        var wallTitle = wall.title.length > 20 ? wall.title.substring(0, 18) + '…' : wall.title;
+        stats.push({ icon: '🧱', title: 'Le Mur', value: '"' + wallTitle + '" (' + wall.correct.length + '/' + wall.totalPlayers + ')' });
+    }
+
+    // 10. Trop Facile — question la plus trouvée
+    if (history.length > 0) {
+        var easySorted = history.slice().sort(function(a, b) { return b.correct.length - a.correct.length; });
+        var easy = easySorted[0];
+        var easyTitle = easy.title.length > 20 ? easy.title.substring(0, 18) + '…' : easy.title;
+        stats.push({ icon: '🎯', title: 'Trop Facile', value: '"' + easyTitle + '" (' + easy.correct.length + '/' + easy.totalPlayers + ')' });
+    }
+
+    // 11. L'Everest — tout le monde a eu besoin de l'image 3, plus long temps
+    var everest = null;
+    var everestTime = 0;
+    history.forEach(function(round) {
+        if (round.correct.length > 0 && round.correct.every(function(cp) { return cp.imageLevel === 3; })) {
+            var avgT = round.correct.reduce(function(sum, cp) { return sum + ((cp.timestamp || 0) - (round.startTime || 0)); }, 0) / round.correct.length;
+            if (avgT > everestTime) { everestTime = avgT; everest = round; }
+        }
+    });
+    if (everest) {
+        var evTitle = everest.title.length > 20 ? everest.title.substring(0, 18) + '…' : everest.title;
+        stats.push({ icon: '🧗', title: "L'Everest", value: '"' + evTitle + '"' });
+    }
+
+    // 12. Questions mortelles — questions sans aucune bonne réponse
+    var deadCount = history.filter(function(r) { return r.correct.length === 0; }).length;
+    if (deadCount > 0) {
+        stats.push({ icon: '💀', title: 'Questions mortelles', value: deadCount + ' / ' + history.length });
+    }
+
+    // 13. Podium des plus rapides — top 3 réponses image 1
+    var fastAnswers = [];
+    history.forEach(function(round) {
+        (round.correct || []).forEach(function(cp) {
+            if (cp.imageLevel === 1 && cp.timestamp && round.startTime) {
+                fastAnswers.push({ name: cp.name, emoji: cp.emoji, time: (cp.timestamp - round.startTime) / 1000, question: round.title });
+            }
+        });
+    });
+    fastAnswers.sort(function(a, b) { return a.time - b.time; });
+    if (fastAnswers.length > 0) {
+        var medals = ['🥇', '🥈', '🥉'];
+        var top3 = fastAnswers.slice(0, 3);
+        var podText = top3.map(function(p, i) { return medals[i] + ' ' + p.emoji + ' ' + p.name + ' (' + p.time.toFixed(1) + 's)'; }).join('  ');
+        stats.push({ icon: '🏅', title: 'Podium des plus rapides', value: podText, wide: true });
+    }
+
+    // === RENDER ===
+    stats.forEach(function(s) {
+        var div = document.createElement('div');
+        div.className = 'fun-stat' + (s.wide ? ' fun-stat-wide' : '');
+        div.innerHTML = '<div class="stat-icon">' + s.icon + '</div>' +
+            '<div class="stat-title">' + s.title + '</div>' +
+            '<div class="stat-value">' + s.value + '</div>';
         container.appendChild(div);
     });
 }
