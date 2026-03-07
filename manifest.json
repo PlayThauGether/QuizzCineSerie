@@ -1,7 +1,7 @@
 {
-  "name": "PTG - Quiz Film & Série",
+  "name": "PTG - 3 Images - 1 Film",
   "short_name": "Quiz PTG",
-  "description": "3 Images, 1 Oeuvre — Trouve le plus vite !",
+  "description": "3 Images, 1 Film — Trouve le plus vite !",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",
