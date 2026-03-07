@@ -1,6 +1,6 @@
 {
   "name": "PTG - 3 Images - 1 Film",
-  "short_name": "PTG - 3 Images - 1 Film",
+  "short_name": "PTG-QuizVisuel",
   "description": "3 Images, 1 Film — Trouve le plus vite !",
   "start_url": "./index.html",
   "display": "standalone",
